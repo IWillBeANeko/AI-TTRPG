@@ -1,4 +1,4 @@
-import { getSettings, llmChatRequest } from "./config";
+import { getSettings, llmChatRequest, llmFetch } from "./config";
 import { ACT1_STEPS, briefingProgress } from "@/data/play-stage";
 
 export async function judgeStep(step, memories) {
@@ -65,8 +65,6 @@ ${recent.map((line, index) => `${index + 1}. ${line}`).join("\n")}
 
 async function completeChat(settings, prompt) {
   const traceId = crypto.randomUUID();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
   const { headers, body } = llmChatRequest(settings, {
     messages: [
       {
@@ -79,19 +77,14 @@ async function completeChat(settings, prompt) {
     json: true,
     user: traceId,
   });
-  try {
-    const response = await fetch(`${settings.apiBase}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers,
-      body,
-    });
-    if (!response.ok) throw new Error(`LLM ${response.status}`);
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "{}";
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await llmFetch(
+    `${settings.apiBase}/chat/completions`,
+    { method: "POST", headers, body },
+    { timeoutMs: 25000 },
+  );
+  if (!response.ok) throw new Error(`LLM ${response.status}`);
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "{}";
 }
 
 function extractJson(raw) {

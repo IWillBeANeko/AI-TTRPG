@@ -1,4 +1,4 @@
-import { getSettings, llmChatRequest } from "./config";
+import { getSettings, llmChatRequest, llmFetch } from "./config";
 import { ATTR_DEFS, ATTR_MAX, ATTR_MIN, ATTR_POINT_TOTAL, compileTraits, describePersonalitySeed, TRAIT_READINGS } from "@/data/chargen";
 import { briefingPlain, openingBriefing } from "@/data/story-manifest";
 
@@ -381,30 +381,23 @@ async function completePair(settings, sheet, extra = "") {
     { role: "user", content: buildPrompt(sheet, extra) },
   ];
   const traceId = crypto.randomUUID();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
   const { headers, body } = llmChatRequest(settings, {
     messages,
     temperature: 0.9,
     json: true,
     user: traceId,
   });
-  try {
-    const response = await fetch(`${settings.apiBase}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers,
-      body,
-    });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(`LLM ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`);
-    }
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "{}";
-  } finally {
-    clearTimeout(timer);
+  const response = await llmFetch(
+    `${settings.apiBase}/chat/completions`,
+    { method: "POST", headers, body },
+    { timeoutMs: 60000 },
+  );
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`LLM ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`);
   }
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "{}";
 }
 
 function extractJson(raw) {

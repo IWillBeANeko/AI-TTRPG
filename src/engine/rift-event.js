@@ -1,7 +1,8 @@
 import riftSkill from "@/character-engine/skills/rift/SKILL.md?raw";
 import { WORLD_KNOWLEDGE, getCharacterPack } from "@/character-engine";
 import { briefingProgress } from "@/data/play-stage";
-import { getSettings, llmChatRequest } from "./config";
+import { getSettings, llmChatRequest, llmFetch } from "./config";
+import { isAbortError } from "./page-session";
 import { appendMapEvent, composeMapStatus, setMapOverlay } from "./map-status";
 import { playLogMarkdown } from "./play-log";
 
@@ -11,13 +12,14 @@ export function emptyRift() {
   return { status: "idle", event: null };
 }
 
-export async function generateHarborRift(game) {
+export async function generateHarborRift(game, signal) {
   const settings = getSettings();
   if (!settings.usesLlm) return fallbackRift(game);
   try {
-    const raw = await completeChat(settings, buildPrompt(game));
+    const raw = await completeChat(settings, buildPrompt(game), signal);
     return normalizeRift(extractJson(raw), game);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return fallbackRift(game);
   }
 }
@@ -119,10 +121,8 @@ function clampInt(value, min, max) {
   return clamp(Math.round(n), min, max);
 }
 
-async function completeChat(settings, prompt) {
+async function completeChat(settings, prompt, signal) {
   const traceId = crypto.randomUUID();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
   const { headers, body } = llmChatRequest(settings, {
     messages: [
       { role: "system", content: "你在码头写一次小变故。只输出 JSON。" },
@@ -132,19 +132,14 @@ async function completeChat(settings, prompt) {
     json: true,
     user: traceId,
   });
-  try {
-    const response = await fetch(`${settings.apiBase}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers,
-      body,
-    });
-    if (!response.ok) throw new Error(`LLM ${response.status}`);
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "{}";
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await llmFetch(
+    `${settings.apiBase}/chat/completions`,
+    { method: "POST", headers, body },
+    { timeoutMs: 20000, signal },
+  );
+  if (!response.ok) throw new Error(`LLM ${response.status}`);
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "{}";
 }
 
 function extractJson(raw) {

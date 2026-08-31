@@ -1,3 +1,5 @@
+import { mergeAbortSignals } from "./page-session";
+
 const STORAGE_KEY = "chronodeck.rpg_api_key";
 const LOCAL_LLM_PROXY = "/llm";
 
@@ -81,4 +83,13 @@ export function llmChatRequest(settings, { messages, temperature, json = false, 
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
   };
+}
+
+export async function llmFetch(url, init = {}, { timeoutMs = 60000, signal } = {}) {
+  const { signal: combined, dispose } = mergeAbortSignals(timeoutMs, signal);
+  try {
+    return await fetch(url, { ...init, signal: combined });
+  } finally {
+    dispose();
+  }
 }

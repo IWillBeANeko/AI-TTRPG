@@ -1,6 +1,6 @@
 import { buildTalkPrompt, TALK_JSON_EXAMPLE, TALK_SKILL } from "@/character-engine";
 import { frailFallbackAction, isFrail } from "./character";
-import { getSettings, llmChatRequest } from "./config";
+import { getSettings, llmChatRequest, llmFetch } from "./config";
 import { queryKeys } from "./cognition";
 import {
   ActionType,
@@ -159,36 +159,27 @@ export class Actor {
     if (this.isMinimax()) return this.completeMinimax(character, packed, turns);
 
     const traceId = crypto.randomUUID();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
     const { headers, body } = llmChatRequest(this.settings, {
       messages,
       temperature: this.settings.actorTemperature,
       json: this.supportsJsonObject(),
       user: traceId,
     });
-    try {
-      const response = await fetch(`${this.settings.apiBase}/chat/completions`, {
-        method: "POST",
-        signal: controller.signal,
-        headers,
-        body,
-      });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => "");
-        throw new Error(`LLM ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`);
-      }
-      const data = await response.json();
-      return data?.choices?.[0]?.message?.content || "{}";
-    } finally {
-      clearTimeout(timer);
+    const response = await llmFetch(
+      `${this.settings.apiBase}/chat/completions`,
+      { method: "POST", headers, body },
+      { timeoutMs: 60000 },
+    );
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`LLM ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`);
     }
+    const data = await response.json();
+    return data?.choices?.[0]?.message?.content || "{}";
   }
 
   async completeMinimax(character, packed, turns) {
     const botName = (character.name || "演员").slice(0, 32);
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 60000);
     const messages = ensureUserFirst(turns).map((turn) => ({
       sender_type: turn.sender_type,
       sender_name: turn.sender_type === "BOT" ? botName : turn.sender_name,
@@ -208,35 +199,31 @@ export class Actor {
       temperature: this.settings.actorTemperature,
       top_p: 0.95,
     };
+    let data = null;
     try {
-      let data = null;
-      try {
-        data = await postMinimax(this.settings.apiBase, this.settings.apiKey, payload, controller.signal);
-      } catch (exc) {
-        const kind = String(exc?.name || exc).toLowerCase();
-        const message = String(exc?.message || exc);
-        if (
-          ["typeerror", "aborterror"].includes(kind) ||
-          /connect|timeout|network|failed to fetch|abort/i.test(kind + message)
-        ) {
-          throw exc;
-        }
-        if (!payload.reply_constraints.glyph) throw exc;
+      data = await postMinimax(this.settings.apiBase, this.settings.apiKey, payload);
+    } catch (exc) {
+      const kind = String(exc?.name || exc).toLowerCase();
+      const message = String(exc?.message || exc);
+      if (
+        ["typeerror", "aborterror"].includes(kind) ||
+        /connect|timeout|network|failed to fetch|abort/i.test(kind + message)
+      ) {
+        throw exc;
       }
-      if ((!data || minimaxFailed(data)) && payload.reply_constraints.glyph) {
-        const retry = {
-          ...payload,
-          reply_constraints: { sender_type: "BOT", sender_name: botName },
-        };
-        data = await postMinimax(this.settings.apiBase, this.settings.apiKey, retry, controller.signal);
-      }
-      if (!data || minimaxFailed(data)) {
-        throw new Error(data?.base_resp?.status_msg || `MiniMax status ${data?.base_resp?.status_code || "empty"}`);
-      }
-      return pickMinimaxReply(data);
-    } finally {
-      clearTimeout(timer);
+      if (!payload.reply_constraints.glyph) throw exc;
     }
+    if ((!data || minimaxFailed(data)) && payload.reply_constraints.glyph) {
+      const retry = {
+        ...payload,
+        reply_constraints: { sender_type: "BOT", sender_name: botName },
+      };
+      data = await postMinimax(this.settings.apiBase, this.settings.apiKey, retry);
+    }
+    if (!data || minimaxFailed(data)) {
+      throw new Error(data?.base_resp?.status_msg || `MiniMax status ${data?.base_resp?.status_code || "empty"}`);
+    }
+    return pickMinimaxReply(data);
   }
 
   async completeOllama(messages) {
@@ -259,11 +246,15 @@ export class Actor {
         user.content = `${user.content || ""}\n/no_think`;
       }
     }
-    const response = await fetch(`${root}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const response = await llmFetch(
+      `${root}/api/chat`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      },
+      { timeoutMs: 60000 },
+    );
     if (!response.ok) throw new Error(`Ollama ${response.status}`);
     const data = await response.json();
     return data?.message?.content || "{}";
@@ -844,17 +835,20 @@ function pickMinimaxReply(data) {
   return String(text || "{}");
 }
 
-async function postMinimax(apiBase, apiKey, payload, signal) {
-  const response = await fetch(`${apiBase}/text/chatcompletion_pro`, {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "M-TraceId": crypto.randomUUID(),
+async function postMinimax(apiBase, apiKey, payload) {
+  const response = await llmFetch(
+    `${apiBase}/text/chatcompletion_pro`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "M-TraceId": crypto.randomUUID(),
+      },
+      body: JSON.stringify(payload),
     },
-    body: JSON.stringify(payload),
-  });
+    { timeoutMs: 60000 },
+  );
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
     throw new Error(`MiniMax ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ""}`);

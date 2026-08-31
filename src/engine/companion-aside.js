@@ -1,23 +1,25 @@
 import asideSkill from "@/character-engine/skills/aside/SKILL.md?raw";
 import { WORLD_KNOWLEDGE, getCharacterPack } from "@/character-engine";
 import { briefingProgress, locationById, situationOf } from "@/data/play-stage";
-import { getSettings, llmChatRequest } from "./config";
+import { getSettings, llmChatRequest, llmFetch } from "./config";
+import { isAbortError } from "./page-session";
 import { playLogMarkdown } from "./play-log";
 
 export const ASIDE_GAP_MS = 30000;
 
-export async function generateCompanionAside(game) {
+export async function generateCompanionAside(game, signal) {
   const companion = game?.companion;
   if (!companion?.name) return null;
   const settings = getSettings();
   if (!settings.usesLlm) return fallbackAside(game);
   try {
-    const raw = await completeChat(settings, buildPrompt(game));
+    const raw = await completeChat(settings, buildPrompt(game), signal);
     const data = extractJson(raw);
     const speech = String(data?.speech || "").trim().slice(0, 90);
     if (!speech || speech === lastAside(game)) return fallbackAside(game);
     return { speech };
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return fallbackAside(game);
   }
 }
@@ -93,10 +95,8 @@ function lastAside(game) {
   return text;
 }
 
-async function completeChat(settings, prompt) {
+async function completeChat(settings, prompt, signal) {
   const traceId = crypto.randomUUID();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
   const { headers, body } = llmChatRequest(settings, {
     messages: [
       {
@@ -109,19 +109,14 @@ async function completeChat(settings, prompt) {
     json: true,
     user: traceId,
   });
-  try {
-    const response = await fetch(`${settings.apiBase}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers,
-      body,
-    });
-    if (!response.ok) throw new Error(`LLM ${response.status}`);
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "{}";
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await llmFetch(
+    `${settings.apiBase}/chat/completions`,
+    { method: "POST", headers, body },
+    { timeoutMs: 20000, signal },
+  );
+  if (!response.ok) throw new Error(`LLM ${response.status}`);
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "{}";
 }
 
 function extractJson(raw) {

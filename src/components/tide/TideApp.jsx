@@ -23,6 +23,7 @@ import { reviewAct1Progress } from "@/engine/progress";
 import { generateAssessment } from "@/engine/assessment";
 import { ASIDE_GAP_MS, generateCompanionAside } from "@/engine/companion-aside";
 import { applyRiftEvent, emptyRift, generateHarborRift, RIFT_DWELL_MS } from "@/engine/rift-event";
+import { isAbortError, isPageLive, subscribePageLive } from "@/engine/page-session";
 import { appendMapEvent } from "@/engine/map-status";
 import { clearPlayRecord, recordPlay } from "@/engine/play-log";
 import { act1Complete, briefingProgress, locationById } from "@/data/play-stage";
@@ -181,6 +182,7 @@ export default function TideApp() {
   const [assessment, setAssessment] = useState(null);
   const [aside, setAside] = useState({ pending: null, shown: "", lastHeardAt: 0 });
   const [siteStay, setSiteStay] = useState({ view: "world", location: "square", tutoring: false });
+  const [pageLive, setPageLive] = useState(() => isPageLive());
   const pending = useRef(null);
   const diceLock = useRef(0);
   const generating = useRef(false);
@@ -190,6 +192,8 @@ export default function TideApp() {
   const riftFetch = useRef(false);
   const riftTicket = useRef(0);
   gameRef.current = game;
+
+  useEffect(() => subscribePageLive(setPageLive), []);
 
   useEffect(() => {
     try {
@@ -543,32 +547,36 @@ export default function TideApp() {
   };
 
   useEffect(() => {
-    if (phase !== "play" || !game.companion?.name) return undefined;
+    if (!pageLive || phase !== "play" || !game.companion?.name) return undefined;
     if (dialog || dice) return undefined;
     if (aside.pending?.speech || asideFetch.current) return undefined;
     const waited = Date.now() - (aside.lastHeardAt || 0);
     const delay = Math.max(400, ASIDE_GAP_MS - waited);
     const ticket = asideTicket.current;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
-      if (asideTicket.current !== ticket || asideFetch.current) return;
+      if (!isPageLive() || asideTicket.current !== ticket || asideFetch.current) return;
       asideFetch.current = true;
       try {
-        const result = await generateCompanionAside(gameRef.current);
+        const result = await generateCompanionAside(gameRef.current, controller.signal);
         if (asideTicket.current !== ticket) return;
         if (result?.speech) {
           setAside((prev) => ({ ...prev, pending: result }));
         } else {
           setAside((prev) => ({ ...prev, lastHeardAt: Date.now() }));
         }
-      } catch {
-        if (asideTicket.current !== ticket) return;
+      } catch (error) {
+        if (isAbortError(error) || asideTicket.current !== ticket) return;
         setAside((prev) => ({ ...prev, lastHeardAt: Date.now() }));
       } finally {
         if (asideTicket.current === ticket) asideFetch.current = false;
       }
     }, delay);
-    return () => clearTimeout(timer);
-  }, [phase, game.companion, dialog, dice, aside.pending, aside.lastHeardAt]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [pageLive, phase, game.companion?.name, dialog, dice, aside.pending, aside.lastHeardAt]);
 
   useEffect(() => {
     if (phase === "play") return undefined;
@@ -580,28 +588,41 @@ export default function TideApp() {
   }, [phase]);
 
   useEffect(() => {
-    if (phase !== "play") return undefined;
+    if (!pageLive && phase === "play") {
+      asideTicket.current += 1;
+      asideFetch.current = false;
+      riftTicket.current += 1;
+      riftFetch.current = false;
+    }
+  }, [pageLive, phase]);
+
+  useEffect(() => {
+    if (!pageLive || phase !== "play") return undefined;
     if (siteStay.tutoring) return undefined;
     if (siteStay.view !== "site" || siteStay.location !== "harbor") return undefined;
     const rift = game.rift || emptyRift();
     if (rift.status === "done" || rift.status === "ready") return undefined;
     if (riftFetch.current) return undefined;
     const ticket = riftTicket.current;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
-      if (riftTicket.current !== ticket || riftFetch.current) return;
+      if (!isPageLive() || riftTicket.current !== ticket || riftFetch.current) return;
       riftFetch.current = true;
       try {
-        const event = await generateHarborRift(gameRef.current);
+        const event = await generateHarborRift(gameRef.current, controller.signal);
         if (riftTicket.current !== ticket) return;
         if (event) setGame((prev) => ({ ...prev, rift: { status: "ready", event } }));
-      } catch {
-        if (riftTicket.current !== ticket) return;
+      } catch (error) {
+        if (isAbortError(error) || riftTicket.current !== ticket) return;
       } finally {
         if (riftTicket.current === ticket) riftFetch.current = false;
       }
     }, RIFT_DWELL_MS);
-    return () => clearTimeout(timer);
-  }, [phase, siteStay.view, siteStay.location, siteStay.tutoring, game.rift?.status]);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [pageLive, phase, siteStay.view, siteStay.location, siteStay.tutoring, game.rift?.status]);
 
   const ackRift = () => {
     const event = game.rift?.event;

@@ -3,7 +3,7 @@ import { WORLD_KNOWLEDGE } from "@/character-engine";
 import { describePersonalitySeed } from "@/data/chargen";
 import { ACT1_STEPS } from "@/data/play-stage";
 import { briefingPlain, openingBriefing } from "@/data/story-manifest";
-import { getSettings, llmChatRequest } from "./config";
+import { getSettings, llmChatRequest, llmFetch } from "./config";
 import { playLogMarkdown } from "./play-log";
 
 const SCHEMA = {
@@ -101,8 +101,6 @@ function fallbackReport(game) {
 
 async function completeChat(settings, prompt) {
   const traceId = crypto.randomUUID();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45000);
   const { headers, body } = llmChatRequest(settings, {
     messages: [
       {
@@ -115,19 +113,14 @@ async function completeChat(settings, prompt) {
     json: true,
     user: traceId,
   });
-  try {
-    const response = await fetch(`${settings.apiBase}/chat/completions`, {
-      method: "POST",
-      signal: controller.signal,
-      headers,
-      body,
-    });
-    if (!response.ok) throw new Error(`LLM ${response.status}`);
-    const data = await response.json();
-    return data?.choices?.[0]?.message?.content || "{}";
-  } finally {
-    clearTimeout(timer);
-  }
+  const response = await llmFetch(
+    `${settings.apiBase}/chat/completions`,
+    { method: "POST", headers, body },
+    { timeoutMs: 45000 },
+  );
+  if (!response.ok) throw new Error(`LLM ${response.status}`);
+  const data = await response.json();
+  return data?.choices?.[0]?.message?.content || "{}";
 }
 
 function extractJson(raw) {
