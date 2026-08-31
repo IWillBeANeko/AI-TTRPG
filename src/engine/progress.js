@@ -1,4 +1,4 @@
-import { getSettings } from "./config";
+import { getSettings, llmChatRequest } from "./config";
 import { ACT1_STEPS, briefingProgress } from "@/data/play-stage";
 
 export async function judgeStep(step, memories) {
@@ -67,28 +67,24 @@ async function completeChat(settings, prompt) {
   const traceId = crypto.randomUUID();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
+  const { headers, body } = llmChatRequest(settings, {
+    messages: [
+      {
+        role: "system",
+        content: "你是严格的进度判定员。记忆里没有明确事实就判定未完成。只输出 JSON。",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.1,
+    json: true,
+    user: traceId,
+  });
   try {
     const response = await fetch(`${settings.apiBase}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`,
-        "M-TraceId": traceId,
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.1,
-        stream: false,
-        messages: [
-          {
-            role: "system",
-            content: "你是严格的进度判定员。记忆里没有明确事实就判定未完成。只输出 JSON。",
-          },
-          { role: "user", content: prompt },
-        ],
-        user: traceId,
-      }),
+      headers,
+      body,
     });
     if (!response.ok) throw new Error(`LLM ${response.status}`);
     const data = await response.json();

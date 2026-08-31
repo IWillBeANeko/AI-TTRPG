@@ -1,5 +1,10 @@
 const STORAGE_KEY = "chronodeck.rpg_api_key";
-const LOCAL_LLM_PROXY = "http://127.0.0.1:8787";
+const LOCAL_LLM_PROXY = "/llm";
+
+/** 已按你的要求写入前端，任意访问站点的人都能用这把 Key 调 DeepSeek。 */
+const PUBLIC_DEEPSEEK_KEY = "sk-184dbd18a77849d397ade668c29f3a17";
+const DEFAULT_API_BASE = "https://api.deepseek.com";
+const DEFAULT_MODEL = "deepseek-v4-flash";
 
 function readEnv(name, fallback = "") {
   const viteKey = `VITE_${name}`;
@@ -24,9 +29,6 @@ function isBrowserLocalhost() {
 }
 
 function resolveApiBase(configuredBase) {
-  // 锁定的 vite.config.js 没有 /rpg-llm 代理。
-  // Nocode / 生产：浏览器直连 AIGC。
-  // 本机 localhost：走独立 sidecar，避免 CORS。
   const devProxy = readEnv("RPG_DEV_PROXY");
   if (devProxy) return devProxy.replace(/\/$/, "");
   if (isBrowserLocalhost()) return LOCAL_LLM_PROXY;
@@ -34,8 +36,8 @@ function resolveApiBase(configuredBase) {
 }
 
 export function getSettings() {
-  const apiKey = readEnv("RPG_API_KEY") || readStoredKey();
-  const configuredBase = readEnv("RPG_API_BASE", "https://aigc.sankuai.com/v1/openai/native")
+  const apiKey = readEnv("RPG_API_KEY") || readStoredKey() || PUBLIC_DEEPSEEK_KEY;
+  const configuredBase = readEnv("RPG_API_BASE", DEFAULT_API_BASE)
     .replace(/\/$/, "")
     .replace(/\/chat\/completions$/i, "");
   const apiBase = resolveApiBase(configuredBase);
@@ -43,7 +45,7 @@ export function getSettings() {
     apiKey,
     apiBase,
     configuredBase,
-    model: readEnv("RPG_MODEL", "LongCat-Flash-Chat-Huawei") || "LongCat-Flash-Chat-Huawei",
+    model: readEnv("RPG_MODEL", DEFAULT_MODEL) || DEFAULT_MODEL,
     embeddingModel: readEnv("RPG_EMBEDDING_MODEL"),
     loraRoot: readEnv("RPG_LORA_ROOT"),
     memoryRetrieveK: 8,
@@ -61,4 +63,22 @@ export function setApiKey(key) {
   const value = (key || "").trim();
   if (value) localStorage.setItem(STORAGE_KEY, value);
   else localStorage.removeItem(STORAGE_KEY);
+}
+
+export function llmChatRequest(settings, { messages, temperature, json = false, user }) {
+  return {
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${settings.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      temperature,
+      stream: false,
+      messages,
+      thinking: { type: "disabled" },
+      ...(user ? { user } : {}),
+      ...(json ? { response_format: { type: "json_object" } } : {}),
+    }),
+  };
 }

@@ -1,4 +1,4 @@
-import { getSettings } from "./config";
+import { getSettings, llmChatRequest } from "./config";
 import { ATTR_DEFS, ATTR_MAX, ATTR_MIN, ATTR_POINT_TOTAL, compileTraits, describePersonalitySeed, TRAIT_READINGS } from "@/data/chargen";
 import { briefingPlain, openingBriefing } from "@/data/story-manifest";
 
@@ -383,22 +383,18 @@ async function completePair(settings, sheet, extra = "") {
   const traceId = crypto.randomUUID();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 60000);
+  const { headers, body } = llmChatRequest(settings, {
+    messages,
+    temperature: 0.9,
+    json: true,
+    user: traceId,
+  });
   try {
     const response = await fetch(`${settings.apiBase}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`,
-        "M-TraceId": traceId,
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.9,
-        stream: false,
-        messages,
-        user: traceId,
-      }),
+      headers,
+      body,
     });
     if (!response.ok) {
       const detail = await response.text().catch(() => "");

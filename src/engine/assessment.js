@@ -3,7 +3,7 @@ import { WORLD_KNOWLEDGE } from "@/character-engine";
 import { describePersonalitySeed } from "@/data/chargen";
 import { ACT1_STEPS } from "@/data/play-stage";
 import { briefingPlain, openingBriefing } from "@/data/story-manifest";
-import { getSettings } from "./config";
+import { getSettings, llmChatRequest } from "./config";
 import { playLogMarkdown } from "./play-log";
 
 const SCHEMA = {
@@ -103,28 +103,24 @@ async function completeChat(settings, prompt) {
   const traceId = crypto.randomUUID();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 45000);
+  const { headers, body } = llmChatRequest(settings, {
+    messages: [
+      {
+        role: "system",
+        content: "你是性格评测员。只根据游玩记录下判断。只输出 JSON。",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.4,
+    json: true,
+    user: traceId,
+  });
   try {
     const response = await fetch(`${settings.apiBase}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`,
-        "M-TraceId": traceId,
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.4,
-        stream: false,
-        messages: [
-          {
-            role: "system",
-            content: "你是性格评测员。只根据游玩记录下判断。只输出 JSON。",
-          },
-          { role: "user", content: prompt },
-        ],
-        user: traceId,
-      }),
+      headers,
+      body,
     });
     if (!response.ok) throw new Error(`LLM ${response.status}`);
     const data = await response.json();

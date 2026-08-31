@@ -1,6 +1,6 @@
 import { buildTalkPrompt, TALK_JSON_EXAMPLE, TALK_SKILL } from "@/character-engine";
 import { frailFallbackAction, isFrail } from "./character";
-import { getSettings } from "./config";
+import { getSettings, llmChatRequest } from "./config";
 import { queryKeys } from "./cognition";
 import {
   ActionType,
@@ -161,23 +161,18 @@ export class Actor {
     const traceId = crypto.randomUUID();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60000);
+    const { headers, body } = llmChatRequest(this.settings, {
+      messages,
+      temperature: this.settings.actorTemperature,
+      json: this.supportsJsonObject(),
+      user: traceId,
+    });
     try {
       const response = await fetch(`${this.settings.apiBase}/chat/completions`, {
         method: "POST",
         signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.settings.apiKey}`,
-          "M-TraceId": traceId,
-        },
-        body: JSON.stringify({
-          model: this.settings.model,
-          temperature: this.settings.actorTemperature,
-          stream: false,
-          ...(this.supportsJsonObject() ? { response_format: { type: "json_object" } } : {}),
-          messages,
-          user: traceId,
-        }),
+        headers,
+        body,
       });
       if (!response.ok) {
         const detail = await response.text().catch(() => "");

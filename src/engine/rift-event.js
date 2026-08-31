@@ -1,7 +1,7 @@
 import riftSkill from "@/character-engine/skills/rift/SKILL.md?raw";
 import { WORLD_KNOWLEDGE, getCharacterPack } from "@/character-engine";
 import { briefingProgress } from "@/data/play-stage";
-import { getSettings } from "./config";
+import { getSettings, llmChatRequest } from "./config";
 import { appendMapEvent, composeMapStatus, setMapOverlay } from "./map-status";
 import { playLogMarkdown } from "./play-log";
 
@@ -123,25 +123,21 @@ async function completeChat(settings, prompt) {
   const traceId = crypto.randomUUID();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
+  const { headers, body } = llmChatRequest(settings, {
+    messages: [
+      { role: "system", content: "你在码头写一次小变故。只输出 JSON。" },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.8,
+    json: true,
+    user: traceId,
+  });
   try {
     const response = await fetch(`${settings.apiBase}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`,
-        "M-TraceId": traceId,
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.8,
-        stream: false,
-        messages: [
-          { role: "system", content: "你在码头写一次小变故。只输出 JSON。" },
-          { role: "user", content: prompt },
-        ],
-        user: traceId,
-      }),
+      headers,
+      body,
     });
     if (!response.ok) throw new Error(`LLM ${response.status}`);
     const data = await response.json();

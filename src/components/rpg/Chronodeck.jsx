@@ -525,7 +525,7 @@ export default function Chronodeck() {
                     >
                       <textarea
                         onChange={(event) => setApiKeyDraft(event.target.value)}
-                        placeholder="已读取 .env 的 VITE_RPG_API_KEY。若要临时覆盖，粘贴 AIGC Token"
+                        placeholder="默认已内置 DeepSeek Key。若要覆盖，粘贴你自己的 sk-..."
                         value={apiKeyDraft}
                       />
                       <button className="hud-btn" style={{ width: "100%", marginTop: 8 }} type="submit">

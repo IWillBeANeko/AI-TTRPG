@@ -1,7 +1,7 @@
 import asideSkill from "@/character-engine/skills/aside/SKILL.md?raw";
 import { WORLD_KNOWLEDGE, getCharacterPack } from "@/character-engine";
 import { briefingProgress, locationById, situationOf } from "@/data/play-stage";
-import { getSettings } from "./config";
+import { getSettings, llmChatRequest } from "./config";
 import { playLogMarkdown } from "./play-log";
 
 export const ASIDE_GAP_MS = 30000;
@@ -97,28 +97,24 @@ async function completeChat(settings, prompt) {
   const traceId = crypto.randomUUID();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
+  const { headers, body } = llmChatRequest(settings, {
+    messages: [
+      {
+        role: "system",
+        content: "你是玩家身边的同行者，正在主动开口。只输出 JSON。",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.7,
+    json: true,
+    user: traceId,
+  });
   try {
     const response = await fetch(`${settings.apiBase}/chat/completions`, {
       method: "POST",
       signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${settings.apiKey}`,
-        "M-TraceId": traceId,
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        temperature: 0.7,
-        stream: false,
-        messages: [
-          {
-            role: "system",
-            content: "你是玩家身边的同行者，正在主动开口。只输出 JSON。",
-          },
-          { role: "user", content: prompt },
-        ],
-        user: traceId,
-      }),
+      headers,
+      body,
     });
     if (!response.ok) throw new Error(`LLM ${response.status}`);
     const data = await response.json();
