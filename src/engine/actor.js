@@ -227,7 +227,8 @@ export class Actor {
   }
 
   async completeOllama(messages) {
-    const root = this.settings.configuredBase.replace(/\/v1\/?$/, "") || "http://127.0.0.1:11434";
+    const configured = (this.settings.configuredBase || "").replace(/\/v1\/?$/, "") || "http://127.0.0.1:11434";
+    const root = String(this.settings.apiBase || "").startsWith("/") ? this.settings.apiBase : configured;
     const payload = {
       model: this.settings.model,
       messages,
@@ -237,7 +238,7 @@ export class Actor {
       keep_alive: "10m",
       options: {
         temperature: this.settings.actorTemperature,
-        num_predict: 256,
+        num_predict: 512,
       },
     };
     if (payload.model.toLowerCase().includes("qwen3")) {

@@ -67,7 +67,33 @@ export function setApiKey(key) {
   else localStorage.removeItem(STORAGE_KEY);
 }
 
+export function isOllamaSettings(settings) {
+  const blob = `${settings?.configuredBase || ""} ${settings?.apiBase || ""} ${settings?.apiKey || ""}`.toLowerCase();
+  return blob.includes("11434") || blob.includes("ollama");
+}
+
+export function isZhipuSettings(settings) {
+  const blob = `${settings?.configuredBase || ""} ${settings?.apiBase || ""} ${settings?.model || ""}`.toLowerCase();
+  return blob.includes("bigmodel.cn") || blob.includes("zhipu") || /\bglm-/.test(blob);
+}
+
+function thinkingOptions(settings, ollama) {
+  if (ollama) return {};
+  if (isZhipuSettings(settings)) {
+    // glm-5.3 / glm-4.7 强制思考，传 disabled 会 400；对话场景用 low 控制延迟
+    if (/glm-5(?:\.|$)|glm-4\.7/i.test(settings.model || "")) {
+      return { thinking: { type: "enabled" }, reasoning_effort: "low" };
+    }
+    return {};
+  }
+  return { thinking: { type: "disabled" } };
+}
+
 export function llmChatRequest(settings, { messages, temperature, json = false, user }) {
+  const ollama = isOllamaSettings(settings);
+  const payloadMessages = ollama && /\bqwen3\b/i.test(settings.model || "")
+    ? withQwenNoThink(messages)
+    : messages;
   return {
     headers: {
       "Content-Type": "application/json",
@@ -77,12 +103,22 @@ export function llmChatRequest(settings, { messages, temperature, json = false, 
       model: settings.model,
       temperature,
       stream: false,
-      messages,
-      thinking: { type: "disabled" },
+      messages: payloadMessages,
+      ...thinkingOptions(settings, ollama),
       ...(user ? { user } : {}),
-      ...(json ? { response_format: { type: "json_object" } } : {}),
+      ...(json && !ollama ? { response_format: { type: "json_object" } } : {}),
     }),
   };
+}
+
+function withQwenNoThink(messages) {
+  if (!Array.isArray(messages) || !messages.length) return messages;
+  const next = messages.map((item) => ({ ...item }));
+  const last = next[next.length - 1];
+  if (last && !String(last.content || "").includes("/no_think")) {
+    last.content = `${last.content || ""}\n/no_think`;
+  }
+  return next;
 }
 
 export async function llmFetch(url, init = {}, { timeoutMs = 60000, signal } = {}) {
