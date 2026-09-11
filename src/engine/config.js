@@ -3,10 +3,10 @@ import { mergeAbortSignals } from "./page-session";
 const STORAGE_KEY = "chronodeck.rpg_api_key";
 const LOCAL_LLM_PROXY = "/llm";
 
-/** 已按你的要求写入前端，任意访问站点的人都能用这把 Key 调 DeepSeek。 */
-const PUBLIC_DEEPSEEK_KEY = "sk-184dbd18a77849d397ade668c29f3a17";
-const DEFAULT_API_BASE = "https://api.deepseek.com";
-const DEFAULT_MODEL = "deepseek-v4-flash";
+/** 已按你的要求写入前端，任意访问站点的人都能用这把 Key 调智谱 GLM。 */
+const PUBLIC_ZHIPU_KEY = "d7cba4c33bc742f3bd67884afa932099.4TEfGJMxAnEPGTpf";
+const DEFAULT_API_BASE = "https://open.bigmodel.cn/api/paas/v4";
+const DEFAULT_MODEL = "glm-5.3";
 
 function readEnv(name, fallback = "") {
   const viteKey = `VITE_${name}`;
@@ -38,7 +38,7 @@ function resolveApiBase(configuredBase) {
 }
 
 export function getSettings() {
-  const apiKey = readEnv("RPG_API_KEY") || readStoredKey() || PUBLIC_DEEPSEEK_KEY;
+  const apiKey = readEnv("RPG_API_KEY") || readStoredKey() || PUBLIC_ZHIPU_KEY;
   const configuredBase = readEnv("RPG_API_BASE", DEFAULT_API_BASE)
     .replace(/\/$/, "")
     .replace(/\/chat\/completions$/i, "");

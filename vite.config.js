@@ -7,7 +7,7 @@ const GITHUB_PAGES_BASE = '/AI-TTRPG/';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const apiBase = (env.VITE_RPG_API_BASE || 'https://api.deepseek.com').replace(/\/$/, '');
+  const apiBase = (env.VITE_RPG_API_BASE || 'https://open.bigmodel.cn/api/paas/v4').replace(/\/$/, '');
   const isOllama = /11434|ollama/i.test(apiBase) || String(env.VITE_RPG_API_KEY || '').toLowerCase() === 'ollama';
   const proxyTarget = isOllama ? 'http://127.0.0.1:11434' : apiBase;
 

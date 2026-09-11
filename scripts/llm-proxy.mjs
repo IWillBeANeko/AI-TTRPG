@@ -6,7 +6,7 @@ import http from "node:http";
 import https from "node:https";
 
 const PORT = Number(process.env.RPG_PROXY_PORT || 8787);
-const TARGET = (process.env.RPG_PROXY_TARGET || "https://api.deepseek.com").replace(/\/$/, "");
+const TARGET = (process.env.RPG_PROXY_TARGET || "https://open.bigmodel.cn/api/paas/v4").replace(/\/$/, "");
 const targetUrl = new URL(TARGET);
 
 function corsHeaders() {

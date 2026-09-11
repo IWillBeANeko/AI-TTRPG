@@ -525,7 +525,7 @@ export default function Chronodeck() {
                     >
                       <textarea
                         onChange={(event) => setApiKeyDraft(event.target.value)}
-                        placeholder="默认已内置 DeepSeek Key。若要覆盖，粘贴你自己的 sk-..."
+                        placeholder="默认已内置智谱 GLM Key。若要覆盖，粘贴你自己的 Key..."
                         value={apiKeyDraft}
                       />
                       <button className="hud-btn" style={{ width: "100%", marginTop: 8 }} type="submit">
